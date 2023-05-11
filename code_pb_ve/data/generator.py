@@ -14,13 +14,11 @@ default_data = {
         "down" : [0.0 for _ in range (96)]
     },
     "evses" : [],
-    #"cost_of_electricity" : [0.1 - 0.000/(t+1) for t in range(96)],
-    "cost_of_electricity" : [0 for t in range(96)],
+    "cost_of_electricity" : [0.1 - 0.000/(t+1) for t in range(96)],
     "penalties" : {
         "fcr_up" : 0.01,# alpha
         "fcr_down" : 0,
-        "SOC_fin" : 10000
-        #"SOC_fin" : 100000
+        "SOC_fin" : 100000
     }
 }
 
