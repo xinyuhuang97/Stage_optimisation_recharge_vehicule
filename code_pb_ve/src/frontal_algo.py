@@ -9,8 +9,9 @@ from subpb_pl_cplex import *
 from copy import deepcopy
 
 # Generer une nouvelle instance a=instance_json(20)
-#instance_json(3)
-data=json.load(open('../data/instance_100.json'))
+instance_json(3)
+data=json.load(open('../data/instance_3.json'))
+#data=json.load(open('../data/instance_3.json'))
 N=len(data["evses"]) # Nombre d'evse
 T=data["optim_horizon"] # Nombre de pas de temps
 actuel_time=0
@@ -62,7 +63,7 @@ def Frontal(data, actuel_time, verbose=False):
     p_up = [["p_up_" + str(i) +"_" +str(t) for t in range(1,T+1)]for i in range(N) ]
 
     y = ["y_" + str(t) for t in range(1,T+1)]
-    problem.variables.add(names=y)
+    problem.variables.add(names=y,lb=[-cplex.infinity]*(T),ub=[cplex.infinity]*(T))
     for i in range(N):
         problem.variables.add(names=s_bl[i])
         problem.variables.add(names=s_up[i])
@@ -141,6 +142,7 @@ def Frontal(data, actuel_time, verbose=False):
     problem.solve()
     
     print("valeur optimal retourne par cplex",problem.solution.get_objective_value()) 
+    print(problem.solution.MIP.get_mip_relative_gap())
     """
     for i in range(N):
         print(problem.solution.get_values(c_bl[i]))
@@ -203,7 +205,7 @@ def objective_function(data, x, s_i_t_min, s_i_max):
     cost=0 # Valeur de la fonction objectif
     
     for i in range(N):
-        for j in range(actuel_time,actuel_time+data["optim_horizon"]):
+        for j in range(actuel_time,actuel_time+T):
             hi=  (beta_min*(-min(s_bl[i][j]-s_i_t_min[i][j],0))**2 + \
                   beta_max*max(s_bl[i][j]-s_i_max[i],0)**2 + \
                   beta_min*(-min(s_up[i][j]-s_i_t_min[i][j],0))**2+ \
@@ -211,10 +213,8 @@ def objective_function(data, x, s_i_t_min, s_i_max):
             cost_electricity = (c_bl[i][j]-d_bl[i][j])*data["cost_of_electricity"][j]*data["time_mesh"]/60/N
             cost+=hi+cost_electricity
         # We want the level of c_bl to be the high at the end of the optimization horizon
-        cost-=s_T[i]*data["cost_of_electricity"][actuel_time+data["optim_horizon"]]*penality_SOC_fin/N 
-    #print(y_val,"y_val")
+        cost-=s_T[i]*data["cost_of_electricity"][actuel_time+T]*penality_SOC_fin/N 
     cost+=y_val
-    #print(cost1, cost2)
     return cost
 
 x,s_i_t_min,s_i_max =Frontal(data, actuel_time, verbose=False)

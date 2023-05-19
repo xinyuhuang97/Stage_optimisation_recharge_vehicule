@@ -14,7 +14,7 @@ beta_max=1
 
 # Generer une nouvelle instance a=instance_json(20)
 #instance_json(3)
-data=json.load(open('../data/instance_100.json'))
+data=json.load(open('../data/instance_3.json'))
 N=len(data["evses"]) # Nombre d'evse
 T=data["optim_horizon"] # Nombre de pas de temps
 # Actuel_time \in {0,1,...,H-1}???
@@ -150,13 +150,14 @@ def objective_function(data, x, s_i_t_min, s_i_max):
     d_up=x["d_up"]
     s_bl=x["soc"]
     s_up=x["soc_bar"]
-    y_val= np.sum([ (np.sum([c_bl[i][t]-d_bl[i][t]-c_up[i][t]+d_up[i][t] for i in range(N) ])/N-data["announced_capacity"]["up"][actuel_time+t]/N)**2 for t in range(T)  ])
+    y_val= np.sum([ (np.sum([c_bl[i][t]-d_bl[i][t]-c_up[i][t]+d_up[i][t] \
+    for i in range(N) ])/N-data["announced_capacity"]["up"][actuel_time+t]/N)**2 for t in range(T)  ])
     s_T=s_bl[:,T-1]
     # Calculer la fonction objectif
     cost=0 # Valeur de la fonction objectif
     
     for i in range(N):
-        for j in range(actuel_time,actuel_time+data["optim_horizon"]):
+        for j in range(actuel_time,actuel_time+T):
             hi=  (beta_min*(-min(s_bl[i,j]-s_i_t_min[i,j],0))**2 + \
                   beta_max*max(s_bl[i,j]-s_i_max[i],0)**2 + \
                   beta_min*(-min(s_up[i,j]-s_i_t_min[i,j],0))**2+ \
@@ -164,7 +165,7 @@ def objective_function(data, x, s_i_t_min, s_i_max):
             cost_electricity = (c_bl[i,j]-d_bl[i,j])*data["cost_of_electricity"][j]*data["time_mesh"]/60/N
             cost+=hi+cost_electricity
         # We want the level of c_bl to be the high at the end of the optimization horizon
-        cost-=s_T[i]*data["cost_of_electricity"][actuel_time+data["optim_horizon"]]*penality_SOC_fin/N 
+        cost-=s_T[i]*data["cost_of_electricity"][actuel_time+T]*penality_SOC_fin/N 
     #print(y_val,"y_val")
     cost+=y_val
     #print(cost1, cost2)
