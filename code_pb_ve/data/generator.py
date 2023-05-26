@@ -10,7 +10,7 @@ default_data = {
     "fcr_commit" : 15,
     "time_mesh" : 15,
     "announced_capacity" : {
-        "up" : [80000.0 for _ in range (96)],
+        "up" : [10000.0 for _ in range (96)],
         "down" : [0.0 for _ in range (96)]
     },
     "evses" : [],
@@ -18,8 +18,9 @@ default_data = {
     "penalties" : {
         "fcr_up" : 0.01,# alpha
         "fcr_down" : 0,
-        "SOC_fin" : 10000
-        #"SOC_fin" : 0.9
+        "SOC_fin" : 10000,
+        "beta_min" : 10000,
+        "beta_max" : 10000
     }
 }
 
