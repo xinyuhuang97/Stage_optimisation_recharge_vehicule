@@ -5,23 +5,34 @@ import pandas as pd
 sys.path.append('../data')
 from tqdm import tqdm
 from generator import *
-from subpb_pl_cplex import *
+from tools import *
+sys.path.append('/Applications/CPLEX_Studio221/cplex/python/3.7/x86-64_osx/cplex/_internal')
+sys.path.insert(0, "/Applications/CPLEX_Studio221/cplex/python/3.7/x86-64_osx")
+import cplex
 
-# Generer une nouvelle instance
-#instance_json(10)
-data=json.load(open('../data/instance_10.json'))
+from tools import *
+if __name__ == "__main__":
+    my_instance = "../data/instance_10.json"
 
-N=len(data["evses"]) # Nombre d'evse
-T=data["optim_horizon"] # Nombre de pas de temps
+actual_time=0
+file_name="Frontal_problem.lp"
+data=json.load(open(my_instance))
+N=len(data["evses"])
+T=data["optim_horizon"]
 
 beta_min=data["penalties"]["beta_min"]
 beta_max=data["penalties"]["beta_max"]
 alpha=data["penalties"]["fcr_up"]
 
-actuel_time=0
 
-def Frontal(data, actuel_time, verbose=False):
 
+def Frontal(data, actual_time, verbose=False):
+    
+    N=len(data["evses"]) # Nombre d'evse
+    T=data["optim_horizon"] # Nombre de pas de temps
+    beta_min=data["penalties"]["beta_min"]
+    beta_max=data["penalties"]["beta_max"]
+    alpha=data["penalties"]["fcr_up"]
     # Create a new LP problem
     problem = cplex.Cplex()
 
@@ -45,7 +56,7 @@ def Frontal(data, actuel_time, verbose=False):
     
     time_mesh_to_hour = data["time_mesh"]/60
     s_final = [data["evses"][i]["SOC_final"]*data["evses"][i]["capacity"] for i in range(N)]
-    s_t_min = [[max(data["evses"][i]["SOC_min"]*data["evses"][i]["capacity"],s_final[i]-p_discharge_max[i]*(T-t) ) for t in range(1,T+1)] for i in range(N)]
+    s_t_min = [[max(data["evses"][i]["SOC_min"]*data["evses"][i]["capacity"],s_final[i]-p_discharge_max[i]*(T-t)*time_mesh_to_hour ) for t in range(1,T+1)] for i in range(N)]
 
     cost_electricity = data["cost_of_electricity"]
     penality_SOC_fin = data["penalties"]["SOC_fin"]
@@ -121,7 +132,7 @@ def Frontal(data, actuel_time, verbose=False):
     
     problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["y_"+str(t)]+[x for i in range(N) for x in ["c_bl_"+str(i)+"_"+str(t),"c_up_"+str(i)+"_"+str(t),"d_bl_"+str(i)+"_"+str(t),"d_up_"+str(i)+"_"+str(t)]],\
                                                               val=[1]+[x for _ in range(N) for x in [-1/N,1/N,1/N,-1/N]]) for t in range(1,T+1)],senses=["E"]*T,\
-                                                              rhs=[-x/N for x in data["announced_capacity"]["up"][actuel_time:actuel_time+T]],names=["y_t facilitate calculations"+str(t) for t in range(1,T+1)])
+                                                              rhs=[-x/N for x in data["announced_capacity"]["up"][actual_time:actual_time+T]],names=["y_t facilitate calculations"+str(t) for t in range(1,T+1)])
 
     # Set the objective function
     problem.objective.set_sense(problem.objective.sense.minimize)
@@ -147,13 +158,13 @@ def Frontal(data, actuel_time, verbose=False):
     exprs_final_soc = ["s_bl_"+str(i)+"_"+str(T) for i in range(N)]
     val_final_soc = [-penality_SOC_fin*cost_electricity[T]/N]*N
 
+    
     problem.objective.set_linear(zip(exprs_electricity_cost+exprs_final_soc,val_electricity_cost+val_final_soc))
 
-    problem.write("Frontal_problem.lp")
+    problem.write(file_name)
     problem.solve()
     
-    print("valeur optimal retourne par cplex",problem.solution.get_objective_value()) 
-    print(problem.solution.MIP.get_mip_relative_gap())
+    #print("Valeur optimal retourne par cplex",problem.solution.get_objective_value()) 
 
     sample_c_bl=np.zeros((N,T))
     sample_d_bl=np.zeros((N,T))
@@ -178,12 +189,11 @@ def Frontal(data, actuel_time, verbose=False):
             sample_p_bl[i][t-1]=(problem.solution.get_values("p_bl_"+str(i)+"_"+str(t)))
             sample_p_up[i][t-1]=(problem.solution.get_values("p_up_"+str(i)+"_"+str(t)))
 
-    """
+    
     print("n_bl",sample_n_bl)
     print("n_up",sample_n_up)
     print("p_bl",sample_p_bl)
     print("p_up",sample_p_up)
-    """
     print("c_bl",sample_c_bl)
     print("d_bl",sample_d_bl)
     print("c_up",sample_c_up)
@@ -195,14 +205,18 @@ def Frontal(data, actuel_time, verbose=False):
     print("y",problem.solution.get_values(y))
     print([x**2 for x in (problem.solution.get_values(y))])
     
+    print_objective_function(file_name)
     result ={"c_bl": sample_c_bl, "d_bl": sample_d_bl, \
             "c_up": sample_c_up, "d_up": sample_d_up,\
             "s_bl": sample_s_bl, "s_up": sample_s_up}
+    #print("Valeur optimal retourne par la fonction",objective_function(data,result,s_t_min,soc_max))
+    print("valeur optimal par function objective:", objective_function(data, result, s_t_min, soc_max))
     return result,s_t_min,soc_max
 
 
 def objective_function(data, x, s_i_t_min, s_i_max):
 
+    alpha=data["penalties"]["fcr_up"]
     penality_SOC_fin = data["penalties"]["SOC_fin"]
     # Recuperer les valeurs des variables
     c_bl=x["c_bl"]
@@ -211,14 +225,17 @@ def objective_function(data, x, s_i_t_min, s_i_max):
     d_up=x["d_up"]
     s_bl=x["s_bl"]
     s_up=x["s_up"]
-    f_val= alpha*np.sum([ (np.sum([c_bl[i][t]-d_bl[i][t]-c_up[i][t]+d_up[i][t] for i in range(N) ])/N-data["announced_capacity"]["up"][actuel_time+t]/N)**2 for t in range(T)  ])
+   
+    f_val= alpha*np.sum([ (np.sum([c_bl[i][t]-d_bl[i][t]-c_up[i][t]+d_up[i][t] for i in range(N) ])/N-data["announced_capacity"]["up"][actual_time+t]/N)**2 for t in range(T)  ])
     s_T=s_bl[:,T-1]
+
+    soc_max=[data["evses"][i]["SOC_max"]*data["evses"][i]["capacity"] for i in range(N)]
 
     # Calculer la fonction objectif
     cost=0 # Valeur de la fonction objectif
     
     for i in range(N):
-        for t in range(actuel_time,actuel_time+T):
+        for t in range(actual_time,actual_time+T):
             neg_pos_part =  (beta_min*(-min(s_bl[i][t]-s_i_t_min[i][t],0))**2 + \
                   beta_max*max(s_bl[i][t]-s_i_max[i],0)**2 + \
                   beta_min*(-min(s_up[i][t]-s_i_t_min[i][t],0))**2+ \
@@ -226,10 +243,13 @@ def objective_function(data, x, s_i_t_min, s_i_max):
             cost_electricity = (c_bl[i][t]-d_bl[i][t])*data["cost_of_electricity"][t]*data["time_mesh"]/60/N
             cost+=neg_pos_part+cost_electricity
         # We want the level of c_bl to be the high at the end of the optimization horizon
-        exprs_final_soc=s_T[i]*data["cost_of_electricity"][actuel_time+T]*penality_SOC_fin/N 
-        cost-=exprs_final_soc
-    cost+=f_val
+        #print("s_T[i]",s_T[i])
+        #print("s_i_max[i]",soc_max[i])
+        exprs_final_soc=(soc_max[i]-s_T[i])*data["cost_of_electricity"][actual_time+T]*penality_SOC_fin/N 
+        cost+=exprs_final_soc
+    
+    cost+=f_val #+ np.sum([1/N*data["announced_capacity"]["up"][actual_time]*data["cost_of_electricity"][actual_time]*x for x in soc_max])
     return cost
 
-x,s_i_t_min,s_i_max =Frontal(data, actuel_time, verbose=False)
-print("valeur optimal retourne par la fonction",objective_function(data,x,s_i_t_min,s_i_max))
+#x,s_i_t_min,s_i_max =Frontal(data, actual_time, verbose=False)
+#print("valeur optimal retourne par la fonction",objective_function(data,x,s_i_t_min,s_i_max))

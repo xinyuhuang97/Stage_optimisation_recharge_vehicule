@@ -31,8 +31,8 @@ def resolution_subpb(data, lambda_k, k, i, verbose=False):
 
     time_mesh_to_hour = data["time_mesh"]/60
     s_final=data["evses"][i]["SOC_final"]*data["evses"][i]["capacity"]
-    s_t_min=[max(data["evses"][i]["SOC_min"]*data["evses"][i]["capacity"],s_final-p_discharge_max*(T-t) ) for t in range(1,T+1)]
-    
+    s_t_min=[max(data["evses"][i]["SOC_min"]*data["evses"][i]["capacity"],(s_final-p_charge_max*(T-t)*time_mesh_to_hour) ) for t in range(1,T+1)]
+    #print(s_t_min)
     cost_electricity=data["cost_of_electricity"]
     penality_SOC_fin=data["penalties"]["SOC_fin"]
 
@@ -122,8 +122,8 @@ def resolution_subpb(data, lambda_k, k, i, verbose=False):
     problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["p_up_"+str(t),"s_up_"+str(t)],val=[1,-1]) for t in range(1,T+1)], senses=["G"]*T, rhs=[-soc_max]*T,names=["Positive part up"+str(t) for t in range(1,T+1)])
 
 
-    problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["y_"+str(t), "c_bl_"+str(t),"c_up_"+str(t),"d_bl_"+str(t),"d_up_"+str(t)],\
-                                                                val=[alpha, -alpha, alpha, alpha, -alpha]) for t  in range(1,T+1)], senses=["E"]*(T), rhs=[0 for x in data["announced_capacity"]["up"][0:T]],names=["y_t facilitate calculation"+str(t) for t in range(1,T+1)])
+    problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["y_"+str(t), "c_bl_"+str(t),"d_bl_"+str(t),"c_up_"+str(t),"d_up_"+str(t)],\
+                                                                val=[1, -1, 1, 1, -1]) for t  in range(1,T+1)], senses=["E"]*(T), rhs=[0]*T)
 
     for t in range(1,T+1):
         problem.objective.set_quadratic_coefficients("n_bl_"+str(t),"n_bl_"+str(t),2*beta_min)
@@ -150,5 +150,4 @@ def resolution_subpb(data, lambda_k, k, i, verbose=False):
 
     # Solve the problemx``
     problem.solve()
-  
     return problem.solution.get_values(c_bl), problem.solution.get_values(d_bl), problem.solution.get_values(c_up),problem.solution.get_values(d_up),problem.solution.get_values(s_bl[1:]),problem.solution.get_values(s_up[1:]),problem.solution.get_values(y)

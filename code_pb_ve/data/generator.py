@@ -6,11 +6,11 @@ import sys
 #random.seed(123)
 
 default_data = {
-    "optim_horizon" : 3,
+    "optim_horizon" : 10,
     "fcr_commit" : 15,
     "time_mesh" : 15,
     "announced_capacity" : {
-        "up" : [10000.0 for _ in range (96)],
+        "up" : [7000 for _ in range (96)],
         "down" : [0.0 for _ in range (96)]
     },
     "evses" : [],

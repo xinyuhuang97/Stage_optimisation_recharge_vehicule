@@ -441,10 +441,10 @@
         0.1
     ],
     "penalties": {
-        "fcr_up": 0.01,
+        "fcr_up": 0.0,
         "fcr_down": 0,
-        "SOC_fin": 0.1,
-        "beta_min": 10000,
-        "beta_max": 10000
+        "SOC_fin": 0,
+        "beta_min": 0,
+        "beta_max": 0
     }
 }
