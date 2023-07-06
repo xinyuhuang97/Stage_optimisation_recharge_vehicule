@@ -1,3 +1,5 @@
+import numpy as np
+#from parameters import *
 def print_objective_function(lp_filename):
     with open(lp_filename, 'r') as f:
         read_obj = False
@@ -8,5 +10,3 @@ def print_objective_function(lp_filename):
                 read_obj = False
             if read_obj:
                 print(line.strip())
-
-my_instance = "../data/instance_100.json"

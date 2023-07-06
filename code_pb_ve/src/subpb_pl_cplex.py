@@ -7,7 +7,7 @@ import os
 import sys
 import numpy as np
 
-def resolution_subpb(data, lambda_k, k, i, verbose=False):
+def resolution_subpb(data, lambda_k, i, x_bar_k,verbose=False,):
     # Create a new LP problem
     problem = cplex.Cplex()
 
@@ -121,9 +121,11 @@ def resolution_subpb(data, lambda_k, k, i, verbose=False):
     problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["p_bl_"+str(t),"s_bl_"+str(t)],val=[1,-1]) for t in range(1,T+1)], senses=["G"]*T, rhs=[-soc_max]*T,names=["Positive part bl"+str(t) for t in range(1,T+1)])
     problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["p_up_"+str(t),"s_up_"+str(t)],val=[1,-1]) for t in range(1,T+1)], senses=["G"]*T, rhs=[-soc_max]*T,names=["Positive part up"+str(t) for t in range(1,T+1)])
 
-
+    #print("here",[-x_bar_k["c_bl"][t]+x_bar_k["d_bl"][t]+x_bar_k["c_up"][t]-x_bar_k["d_up"] for t in range(1,T+1)])
     problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["y_"+str(t), "c_bl_"+str(t),"d_bl_"+str(t),"c_up_"+str(t),"d_up_"+str(t)],\
-                                                                val=[1, -1, 1, 1, -1]) for t  in range(1,T+1)], senses=["E"]*(T), rhs=[0]*T)
+                                                              val=[1, -1, 1, 1, -1]) for t  in range(1,T+1)], senses=["E"]*(T), rhs=[0]*T)
+                                                                #val=[1, -1, 1, 1, -1]) for t  in range(1,T+1)], senses=["E"]*(T), rhs=[-x_bar_k["c_bl"][i][t]+x_bar_k["d_bl"][i][t]+x_bar_k["c_up"][i][t]-x_bar_k["d_up"][i][t] for t in range(T)])
+                                                                
 
     for t in range(1,T+1):
         problem.objective.set_quadratic_coefficients("n_bl_"+str(t),"n_bl_"+str(t),2*beta_min)
@@ -132,7 +134,7 @@ def resolution_subpb(data, lambda_k, k, i, verbose=False):
         problem.objective.set_quadratic_coefficients("p_up_"+str(t),"p_up_"+str(t),2*beta_max)
     
     exprs_scalar_prod=["y_" + str(t) for t in range(1,T+1)]
-    val_scalar_prod=lambda_k
+    val_scalar_prod=lambda_k#*alpha
     exprs_electric_cost=[x for t in range(1,T+1) for x in ["c_bl_"+str(t),"d_bl_"+str(t)]]
     val_electric_cost=[x for t in range(1,T+1) for x in [cost_electricity[t-1]*time_mesh_to_hour,-cost_electricity[t-1]*time_mesh_to_hour] ]
 
@@ -149,5 +151,10 @@ def resolution_subpb(data, lambda_k, k, i, verbose=False):
     #problem.write("sub_pbs/sub_pb"+str(i)+"_"+str(k)+".lp")
 
     # Solve the problemx``
+    
     problem.solve()
-    return problem.solution.get_values(c_bl), problem.solution.get_values(d_bl), problem.solution.get_values(c_up),problem.solution.get_values(d_up),problem.solution.get_values(s_bl[1:]),problem.solution.get_values(s_up[1:]),problem.solution.get_values(y)
+    #print("y", np.sum([problem.solution.get_values(y[t])**2*lambda_k[t] for t in range(T)]) )
+    #print("soc_fin",np.sum( [problem.solution.get_values(s_bl[T])*(-penality_SOC_fin*cost_electricity[T])] ))
+    return problem.solution.get_values(c_bl), problem.solution.get_values(d_bl), problem.solution.get_values(c_up),problem.solution.get_values(d_up),\
+        problem.solution.get_values(u_bl), problem.solution.get_values(u_up), problem.solution.get_values(v_bl), problem.solution.get_values(v_up),\
+        problem.solution.get_values(s_bl[1:]),problem.solution.get_values(s_up[1:]),problem.solution.get_values(y)
