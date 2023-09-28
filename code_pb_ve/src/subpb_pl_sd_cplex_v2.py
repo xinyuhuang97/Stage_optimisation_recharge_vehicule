@@ -116,11 +116,11 @@ def resolution_subpb_st(data, lambda_k, i, x_bar_k,verbose=False,):
     
     # constraints 18-21 : extract the positif part/ negatif part of the differce in hi(xi) function
 
-    problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["n_bl_"+str(t),"s_bl_"+str(t)],val=[1,1]) for t in range(1,T+1)], senses=["G"]*T, rhs=s_t_min,names=["Negative part bl"+str(t) for t in range(1,T+1)])
+    """problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["n_bl_"+str(t),"s_bl_"+str(t)],val=[1,1]) for t in range(1,T+1)], senses=["G"]*T, rhs=s_t_min,names=["Negative part bl"+str(t) for t in range(1,T+1)])
     problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["n_up_"+str(t),"s_up_"+str(t)],val=[1,1]) for t in range(1,T+1)], senses=["G"]*T, rhs=s_t_min,names=["Negative part up"+str(t) for t in range(1,T+1)])
     problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["p_bl_"+str(t),"s_bl_"+str(t)],val=[1,-1]) for t in range(1,T+1)], senses=["G"]*T, rhs=[-soc_max]*T,names=["Positive part bl"+str(t) for t in range(1,T+1)])
     problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["p_up_"+str(t),"s_up_"+str(t)],val=[1,-1]) for t in range(1,T+1)], senses=["G"]*T, rhs=[-soc_max]*T,names=["Positive part up"+str(t) for t in range(1,T+1)])
-
+    """
     #
     problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["u_bl_"+str(t)],val=[1]) for t in range(1,T+1)], senses=["G"]*(T), rhs=[x_bar_k["u_bl"][i][t] for t in range(T)])
     problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["v_bl_"+str(t)],val=[1]) for t in range(1,T+1)], senses=["G"]*(T), rhs=[x_bar_k["v_bl"][i][t] for t in range(T)])
@@ -132,17 +132,18 @@ def resolution_subpb_st(data, lambda_k, i, x_bar_k,verbose=False,):
     #print("here",[-x_bar_k["c_bl"][t]+x_bar_k["d_bl"][t]+x_bar_k["c_up"][t]-x_bar_k["d_up"] for t in range(1,T+1)])
     problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["y_"+str(t), "c_bl_"+str(t),"d_bl_"+str(t),"c_up_"+str(t),"d_up_"+str(t)],\
                                                               val=[1, -1, 1, 1, -1]) for t  in range(1,T+1)], senses=["E"]*(T), rhs=[0]*T)
-                                                                #val=[1, -1, 1, 1, -1]) for t  in range(1,T+1)], senses=["E"]*(T), rhs=[-x_bar_k["c_bl"][i][t]+x_bar_k["d_bl"][i][t]+x_bar_k["c_up"][i][t]-x_bar_k["d_up"][i][t] for t in range(T)])
 
     # constraints pour limiter le chargement minimal a chaque pas de temps pour que le vehicule puisse atteindre la charge finale
     problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["s_bl_"+str(t)],val=[1]) for t in range(1,T+1)], senses=["G"]*(T), rhs=s_t_min)
-    
+    problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["s_up_"+str(t)],val=[1]) for t in range(1,T+1)], senses=["G"]*(T), rhs=s_t_min)
+
     """for t in range(1,T+1):
         problem.objective.set_quadratic_coefficients("n_bl_"+str(t),"n_bl_"+str(t),2*beta_min)
         problem.objective.set_quadratic_coefficients("p_bl_"+str(t),"p_bl_"+str(t),2*beta_max)
         problem.objective.set_quadratic_coefficients("n_up_"+str(t),"n_up_"+str(t),2*beta_min)
         problem.objective.set_quadratic_coefficients("p_up_"+str(t),"p_up_"+str(t),2*beta_max)
     """
+    
     exprs_scalar_prod=["y_" + str(t) for t in range(1,T+1)]
     val_scalar_prod=lambda_k
     exprs_electric_cost=[x for t in range(1,T+1) for x in ["c_bl_"+str(t),"d_bl_"+str(t)]]

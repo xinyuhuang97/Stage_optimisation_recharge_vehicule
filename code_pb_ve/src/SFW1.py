@@ -5,8 +5,7 @@ import pandas as pd
 sys.path.append('../data')
 from tqdm import tqdm
 from generator import *
-from subpb_pl_cplex import *
-from subpb_pl_rx_cplex import *
+from subpb_pl_cplex_v2 import *
 from tools import *
 #from copy import 
 
@@ -15,9 +14,6 @@ from tools import *
 # Ajouter les indicateur "gap_total" "gap primal" "gap primal dual"
 # Resoudre les ss-pb ssi les variables de Bernoulli valent 1.
 
-
-# Generer une nouvelle instance a=instance_json(20)
-#instance_json(3)
 if __name__ == "__main__":
     my_instance = "../data/instance_10.json"
 actual_time=0
@@ -29,12 +25,10 @@ actual_time=0
 # Comparer avec les differentes valeurs des parametres \beta \alpha \gamma \cost_elec
 
 class Frank_Wolfe_Stochastic:
-    def __init__(self, my_instance, nb_before=0, nb_ev=0):
-        self.my_instance = my_instance    
-        if nb_ev!=0:
-            self.data = instance_fix_nb(my_instance, nb_ev, nb_before)
-        else:
-            self.data = json.load(open(my_instance))
+    def __init__(self, my_instance):#, nb_before=0, nb_ev=0):
+        self.instance = my_instance    
+        self.algo_name="SFW1"
+        self.data = json.load(open(my_instance))
         self.N = len(self.data["evses"])
         self.T = self.data["optim_horizon"]
         self.beta_min = self.data["penalties"]["beta_min"]
@@ -66,13 +60,9 @@ class Frank_Wolfe_Stochastic:
     
     def function_h(self, x):
 
-        neg_pos_part = np.sum([self.beta_min * (-min(x["s_bl"][i][t] - self.s_i_t_min[i][t],0))**2 + \
-                        self.beta_max * max(x["s_bl"][i][t] - self.s_i_max[i],0)**2 + \
-                        self.beta_min * (-min(x["s_up"][i][t] - self.s_i_t_min[i][t],0))**2 + \
-                        self.beta_max * max(x["s_up"][i][t] - self.s_i_max[i],0)**2 for i in range(self.N) for t in range(self.T)])/self.N
-        cost_eletricity = np.sum([(x["c_bl"][i][t]-x["d_bl"][i][t]) * self.data["cost_of_electricity"][t] * self.data["time_mesh"]/60/self.N for i in range(self.N) for t in range(self.T)])
-        exprs_final_soc=np.sum([(self.soc_max[i]-x["s_bl"][i][self.T-1])*self.data["cost_of_electricity"][self.T-1]*self.penality_SOC_fin/self.N for i in range(self.N)])
-        return neg_pos_part+cost_eletricity+exprs_final_soc
+        cost_eletricity = np.sum([(x["c_bl"][i][t]-x["d_bl"][i][t]) * self.data["cost_of_electricity"][t] * self.data["time_mesh"]/60 for i in range(self.N) for t in range(self.T)])/self.N
+        exprs_final_soc=np.sum([(self.soc_max[i]-x["s_bl"][i][self.T-1])*self.data["cost_of_electricity"][self.T-1]*self.penality_SOC_fin for i in range(self.N)])/self.N
+        return cost_eletricity+exprs_final_soc
     
     def objective_function(self, x):
 
@@ -87,31 +77,65 @@ class Frank_Wolfe_Stochastic:
         s_up=x["s_up"]
         f_val= self.alpha*np.sum([ (np.sum([c_bl[i][t]-d_bl[i][t]-c_up[i][t]+d_up[i][t] for i in range(self.N) ])/self.N - self.data["announced_capacity"]["up"][actual_time+t]/self.N)**2 for t in range(self.T)  ])
         s_T=s_bl[:,self.T-1]
-        #print("y_t : ",[np.sum([c_bl[i][t]-d_bl[i][t]-c_up[i][t]+d_up[i][t] for i in range(N) ])/N for t in range(T)])
-        #print("y_t^up : ",[data["announced_capacity"]["up"][actual_time+t]/N for t in range(T)])
+
         soc_max=[self.data["evses"][i]["SOC_max"]*self.data["evses"][i]["capacity"] for i in range(self.N)]
         # Calculer la fonction objectif
         cost = 0 # Valeur de la fonction objectif
         
-        sum_cost=0
-        sum_n_p=0
         for i in range(self.N):
             for t in range(actual_time, actual_time + self.T):
-                neg_pos_part =  (self.beta_min * (-min(s_bl[i][t] - self.s_i_t_min[i][t],0))**2 + \
-                    self.beta_max*max(s_bl[i][t] - self.s_i_max[i],0)**2 + \
-                    self.beta_min*(-min(s_up[i][t] - self.s_i_t_min[i][t],0))**2+ \
-                    self.beta_max*max(s_up[i][t] - self.s_i_max[i],0)**2)/self.N
                 cost_electricity = (c_bl[i][t]-d_bl[i][t]) * self.data["cost_of_electricity"][t]*self.data["time_mesh"]/60/self.N
-                sum_cost+=cost_electricity
-                sum_n_p+=neg_pos_part
-                cost+=neg_pos_part+cost_electricity
+                cost+=cost_electricity
             # We want the level of c_bl to be the high at the end of the optimization horizon
             exprs_final_soc=(soc_max[i]-s_T[i]) * self.data["cost_of_electricity"][actual_time+self.T]*self.penality_SOC_fin/self.N 
             cost+=exprs_final_soc
         cost+=f_val
         return cost
+    
+    def solution_optimize(self, solution):
+        s_final=[self.data["evses"][i]["SOC_final"]*self.data["evses"][i]["capacity"] for i in range(self.N)]
+        p_charge_max=[self.data["evses"][i]["p_charge_max"] for i in range(self.N)]
+        s_t_min=[[max(self.data["evses"][i]["SOC_min"]*self.data["evses"][i]["capacity"],(s_final[i]-p_charge_max[i]*(self.T-t)*self.time_mesh_to_hour) ) for t in range(1,self.T+1)]for i in range(self.N)]
+        borne_inf_i_t=np.zeros((self.N,self.T+1))
+        borne_sup_i_t=np.zeros((self.N,self.T+1))
+        y_t_inf=np.zeros((self.T+1))
+        y_t_sup=np.zeros((self.T+1))
+        new_solution=deepcopy(solution)
+        diff_i_t=np.zeros((self.N,self.T+1))
+        for i in range(self.N):
+            borne_inf_i_t[i][1]=max((s_t_min[i][0]-self.data["evses"][i]["SOC_init"]*self.data["evses"][i]["capacity"])/self.time_mesh_to_hour,\
+                                    solution["u_up"][i][0]*self.data["evses"][i]["p_charge_min"]-solution["v_up"][i][0]*self.data["evses"][i]["p_discharge_max"])
+            borne_sup_i_t[i][1]=min((self.s_i_max[i]-self.data["evses"][i]["SOC_init"]*self.data["evses"][i]["capacity"])/self.time_mesh_to_hour,\
+                                    solution["u_up"][i][0]*self.data["evses"][i]["p_charge_max"]-solution["v_up"][i][0]*self.data["evses"][i]["p_discharge_min"])
+            for t in range(2,self.T+1):
+                borne_inf_i_t[i][t]=max((s_t_min[i][t-1]-solution["s_bl"][i][t-2])/self.time_mesh_to_hour,\
+                                        solution["u_up"][i][t-1]*self.data["evses"][i]["p_charge_min"]-solution["v_up"][i][t-1]*self.data["evses"][i]["p_discharge_max"])
+                borne_sup_i_t[i][t]=min((self.s_i_max[i]-solution["s_bl"][i][t-2])/self.time_mesh_to_hour,\
+                                        solution["u_up"][i][t-1]*self.data["evses"][i]["p_charge_max"]-solution["v_up"][i][t-1]*self.data["evses"][i]["p_discharge_min"])
+        for t in range(1,self.T+1):
+            for i in range(self.N):
+                y_t_inf[t]+=solution["c_bl"][i,t-1]-solution["d_bl"][i,t-1]-borne_sup_i_t[i,t]
+                y_t_sup[t]+=solution["c_bl"][i,t-1]-solution["d_bl"][i,t-1]-borne_inf_i_t[i,t]
+            y_t_up=self.data["announced_capacity"]["up"][actual_time+t-1]
+            if y_t_inf[t]<y_t_up and y_t_sup[t]>y_t_up:
+                beta=(y_t_up-y_t_inf[t])/(y_t_sup[t]-y_t_inf[t])
+                diff_i_t[:,t]=(1-beta)*borne_sup_i_t[:,t]+beta*borne_inf_i_t[:,t]
+            elif y_t_inf[t]>y_t_up :
+                diff_i_t[:,t]=borne_sup_i_t[:,t]
+            else:
+                diff_i_t[:,t]=borne_inf_i_t[:,t]
+        for i in range(self.N):
+            for t in range(self.T):    
+                if solution["u_up"][i][t]==1:
+                    new_solution["c_up"][i][t]=diff_i_t[i][t+1]
+                    new_solution["d_up"][i][t]=0
+                else:
+                    new_solution["c_up"][i][t]=0
+                    new_solution["d_up"][i][t]=-diff_i_t[i][t+1]
+        return new_solution
 
-    def FW_solve(self, actual_time,  verbose=False, analyse=False, K=100, nk=50, gap_calculate=False):
+
+    def solve(self, actual_time,  verbose=False, analyse=False, K=100, nk=50, gap_calculate=False, optimize=True):
         """!!! gap primal-duale"""
 
         data = self.data
@@ -124,25 +148,30 @@ class Frank_Wolfe_Stochastic:
         progress_bar = tqdm(total=K, unit='iteration')
 
         # Initialisation des np.array pour stocker les valeurs de x_bar_k
-        c_bl=np.zeros((self.N, self.T))
+        c_bl=np.zeros((self.N,self.T))
         c_up=np.zeros((self.N,self.T))
         d_bl=np.zeros((self.N,self.T))
         d_up=np.zeros((self.N,self.T))
+        u_bl=np.zeros((self.N,self.T))
+        u_up=np.zeros((self.N,self.T))
+        v_bl=np.zeros((self.N,self.T))
+        v_up=np.zeros((self.N,self.T))
         s_bl=np.zeros((self.N,self.T))
         s_up=np.zeros((self.N,self.T))
 
         x_bar_k=x_bar_0
 
         # Preparation des donnees s_i_t_min et s_i_max pour les mettre dans la fonction objective
-        s_final=np.array([data["evses"][i]["SOC_final"]*data["evses"][i]["capacity"] for i in range(self.N)]) #liste contenant soc_final_i
-        s_i_t_min = np.array([[max(data["evses"][i]["SOC_min"]*data["evses"][i]["capacity"], (s_final[i]-data["evses"][i]["p_charge_max"]*(self.T-t)) ) for t in range(1,self.T+1)] for i in range(self.N)]) # Liste contenant s_i_t_min caleculer a partir de soc_min_i et p_d_bl_max_i
-        s_i_max=[data["evses"][i]["SOC_max"]*data["evses"][i]["capacity"] for i in range(self.N)] # Liste contenant s_zxi_max
+        #s_final=np.array([data["evses"][i]["SOC_final"]*data["evses"][i]["capacity"] for i in range(self.N)]) #liste contenant soc_final_i
+        #s_i_t_min = np.array([[max(data["evses"][i]["SOC_min"]*data["evses"][i]["capacity"], (s_final[i]-data["evses"][i]["p_charge_max"]*(self.T-t)) ) for t in range(1,self.T+1)] for i in range(self.N)]) # Liste contenant s_i_t_min caleculer a partir de soc_min_i et p_d_bl_max_i
+        #s_i_max=[data["evses"][i]["SOC_max"]*data["evses"][i]["capacity"] for i in range(self.N)] # Liste contenant s_zxi_max
         
         
-
         # Boucle principale
-        x_k = {"c_bl": c_bl, "d_bl": d_bl, "c_up": c_up, "d_up": d_up, "s_bl": s_bl, "s_up": s_up}
+        x_k = {"c_bl": c_bl, "d_bl": d_bl, "c_up": c_up, "d_up": d_up, "u_bl": u_bl, "v_bl": v_bl, "u_up": u_up, "v_up": v_up, "s_bl": s_bl, "s_up": s_up}
+        update_solution=True
         for k in range(K):
+            print("=========iteration : ",k,"===========")
             # Le gradient de (y - y^up)^2 -> 2(y - y^up) with y = x_bar_k["c_bl"]-x_bar_k["d_bl"] - x_bar_k["c_up"] + x_bar_k["d_up"] et y^up = 
             lambda_k=np.array([0.]*self.T)
 
@@ -154,16 +183,22 @@ class Frank_Wolfe_Stochastic:
             """
             lambda_k = (np.sum(x_bar_k["c_bl"] - x_bar_k["d_bl"] - x_bar_k["c_up"] + x_bar_k["d_up"]\
                                  ,axis=0)/self.N-[x/self.N for x in data["announced_capacity"]["up"][actual_time:actual_time+self.T]])*2*self.alpha
+            if update_solution==True:
+                done=[0]*self.N 
             # Resolution des sous-problemes
-            if gap_calculate==True:
+            if gap_calculate==True and update_solution==True :
                 for i in range(self.N):
-                    c_bl_i, d_bl_i, c_up_i, d_up_i , _, _, _, _, s_bl_i, s_up_i, y = resolution_subpb(data, lambda_k,i,x_bar_k, verbose=verbose)
+                    c_bl_i, d_bl_i, c_up_i, d_up_i ,u_bl_i, u_up_i, v_bl_i, v_up_i, s_bl_i, s_up_i, y = resolution_subpb(data, lambda_k,i,x_bar_k, verbose=verbose)
                     c_bl[i]=c_bl_i
                     c_up[i]=c_up_i
                     d_bl[i]=d_bl_i
                     d_up[i]=d_up_i
                     s_bl[i]=s_bl_i
                     s_up[i]=s_up_i
+                    u_bl[i]=(u_bl_i)
+                    u_up[i]=(u_up_i)
+                    v_bl[i]=(v_bl_i)
+                    v_up[i]=(v_up_i)
                 
             
             
@@ -171,12 +206,16 @@ class Frank_Wolfe_Stochastic:
 
             # Tirage de nk[k] echantillons
             list_sample = []
-            done=[0]*self.N
+            #done=[0]*self.N
             for _ in range(nk[k]):
                 sample_c_bl=np.zeros((self.N,self.T))
                 sample_d_bl=np.zeros((self.N,self.T))
                 sample_c_up=np.zeros((self.N,self.T))
                 sample_d_up=np.zeros((self.N,self.T))
+                sample_u_bl=np.zeros((self.N,self.T))
+                sample_v_bl=np.zeros((self.N,self.T))
+                sample_u_up=np.zeros((self.N,self.T))
+                sample_v_up=np.zeros((self.N,self.T))
                 sample_s_bl=np.zeros((self.N,self.T))
                 sample_s_up=np.zeros((self.N,self.T))
                 
@@ -189,29 +228,45 @@ class Frank_Wolfe_Stochastic:
                         sample_d_bl[i]=(x_bar_k["d_bl"][i])
                         sample_c_up[i]=(x_bar_k["c_up"][i])
                         sample_d_up[i]=(x_bar_k["d_up"][i])
+                        sample_u_bl[i]=(x_bar_k["u_bl"][i])
+                        sample_v_bl[i]=(x_bar_k["v_bl"][i])
+                        sample_u_up[i]=(x_bar_k["u_up"][i])
+                        sample_v_up[i]=(x_bar_k["v_up"][i])
                         sample_s_bl[i]=(x_bar_k["s_bl"][i])
                         sample_s_up[i]=(x_bar_k["s_up"][i])
                     else:
                         if gap_calculate==False:
                             if done[i]==0:
                                 done[i]=1
-                                c_bl_i, d_bl_i, c_up_i, d_up_i , _, _, _, _, s_bl_i, s_up_i, y = resolution_subpb(data, lambda_k,i,x_bar_k, verbose=verbose)
-                                c_bl[i]=(c_bl_i)
-                                c_up[i]=(c_up_i)
-                                d_bl[i]=(d_bl_i)
-                                d_up[i]=(d_up_i)
+                                c_bl_i, d_bl_i, c_up_i, d_up_i ,u_bl_i, u_up_i, v_bl_i, v_up_i, s_bl_i, s_up_i, y = resolution_subpb(data, lambda_k,i,x_bar_k, verbose=verbose)
+                                c_bl[i]=c_bl_i
+                                c_up[i]=c_up_i
+                                d_bl[i]=d_bl_i
+                                d_up[i]=d_up_i
                                 s_bl[i]=s_bl_i
                                 s_up[i]=s_up_i
+                                u_bl[i]=(u_bl_i)
+                                u_up[i]=(u_up_i)
+                                v_bl[i]=(v_bl_i)
+                                v_up[i]=(v_up_i)                     
                         sample_c_bl[i]=(c_bl[i])
                         sample_d_bl[i]=(d_bl[i])
                         sample_c_up[i]=(c_up[i])
                         sample_d_up[i]=(d_up[i])
                         sample_s_bl[i]=(s_bl[i])
                         sample_s_up[i]=(s_up[i])
+                        sample_u_bl[i]=(u_bl[i])
+                        sample_v_bl[i]=(v_bl[i])
+                        sample_u_up[i]=(u_up[i])
+                        sample_v_up[i]=(v_up[i])
 
                 sample = {"c_bl": sample_c_bl, "d_bl": sample_d_bl, \
                         "c_up": sample_c_up, "d_up": sample_d_up,\
-                        "s_bl": sample_s_bl, "s_up": sample_s_up}
+                        "u_bl": sample_u_bl, "v_bl": sample_v_bl, \
+                            "u_up": sample_u_up, "v_up": sample_v_up,\
+                            "s_bl": sample_s_bl, "s_up": sample_s_up}
+                if optimize==True:
+                    sample=self.solution_optimize(sample)
                 list_sample.append(sample)
 
             # Obtention de x_k a partir de x_bar_k
@@ -222,32 +277,50 @@ class Frank_Wolfe_Stochastic:
             x_bar_k_score = self.objective_function(x_bar_k)
             x_k_score = self.objective_function(x_k)     
 
-            if gap_calculate==True:
-                gap_primal_dual = (np.dot(lambda_k,np.sum(x_bar_k["c_bl"] - x_bar_k["d_bl"] - x_bar_k["c_up"] + x_bar_k["d_up"],axis=0)/self.N\
-                                    -np.sum(x_k["c_bl"] - x_k["d_bl"] - x_k["c_up"] + x_k["d_up"],axis=0)/self.N))\
-                                    +self.function_h(x_bar_k) - self.function_h(x_k)
-                
+            
             # Mettre a jour x_bar_k en fonction des scores de x_bar_k, x_k et de la meilleure echantillon
-            if best_sample_score > x_bar_k_score or best_sample_score > x_k_score:
+            """if best_sample_score > x_bar_k_score or best_sample_score > x_k_score:
                 if x_bar_k_score > x_k_score:
                     x_bar_k = (x_k)
                 else:
                     x_bar_k = (x_bar_k)
             else:
-                x_bar_k =(best_sample)
+                x_bar_k =(best_sample)"""
+            
+            if k!=0:
+                if best_sample_score > x_bar_k_score or best_sample_score > x_k_score:
+                    if x_bar_k_score > x_k_score:
+                        x_bar_k = (x_k)
+                        update_solution = True
+                    else:
+                        x_bar_k = (x_bar_k)
+                        update_solution = False
+                else:
+                    x_bar_k =(best_sample)
+                    update_solution = True
+            else:
+                x_bar_k = (best_sample)
+            print(min(best_sample_score,x_bar_k_score,x_k_score))
+            gap_primal_dual = -1
+            if gap_calculate==True:
+                gap_primal_dual = (np.dot(lambda_k,np.sum(x_bar_k["c_bl"] - x_bar_k["d_bl"] - x_bar_k["c_up"] + x_bar_k["d_up"],axis=0)/self.N\
+                                    -np.sum(x_k["c_bl"] - x_k["d_bl"] - x_k["c_up"] + x_k["d_up"],axis=0)/self.N))\
+                                    +self.function_h(x_bar_k) - self.function_h(x_k)
+                
             if k==K-1 and gap_calculate==False:
                 for i in range(self.N):
                     c_bl_i, d_bl_i, c_up_i, d_up_i , _, _, _, _, s_bl_i, s_up_i, y = resolution_subpb(data, lambda_k,i,x_bar_k, verbose=verbose)
-                    c_bl[i]=(c_bl_i)
-                    c_up[i]=(c_up_i)
-                    d_bl[i]=(d_bl_i)
-                    d_up[i]=(d_up_i)
+                    c_bl[i]=c_bl_i
+                    c_up[i]=c_up_i
+                    d_bl[i]=d_bl_i
+                    d_up[i]=d_up_i
                     s_bl[i]=s_bl_i
                     s_up[i]=s_up_i
                 x_k = {"c_bl": c_bl, "d_bl": d_bl, "c_up": c_up, "d_up": d_up, "s_bl": s_bl, "s_up": s_up}
                 gap_primal_dual = (np.dot(lambda_k,np.sum(x_bar_k["c_bl"] - x_bar_k["d_bl"] - x_bar_k["c_up"] + x_bar_k["d_up"],axis=0)/self.N\
                                     -np.sum(x_k["c_bl"] - x_k["d_bl"] - x_k["c_up"] + x_k["d_up"],axis=0)/self.N))\
                                     +self.function_h(x_bar_k) - self.function_h(x_k)
+            
                 
             if verbose:
                 print("best_sample_score",best_sample_score)
@@ -271,7 +344,7 @@ class Frank_Wolfe_Stochastic:
                     else:
                         df = df.append({"k": k, "best_score":min(best_sample_score,x_bar_k_score,x_k_score), "charge":x_bar_k["c_bl"],"decharge":x_bar_k["d_bl"],"charge_up":x_bar_k["c_up"],"decharge_up":x_bar_k["d_up"],"soc":x_bar_k["s_bl"],"soc_up":x_bar_k["s_up"]}, ignore_index=True)
         progress_bar.close()
-
+        self.save_data(df,K,optimize)
         print("Gap primal dual : ",gap_primal_dual)
         print("Objective value is : ",self.objective_function(x_bar_k))
         return x_bar_k,df
@@ -281,9 +354,21 @@ class Frank_Wolfe_Stochastic:
         print("------------------------------------------------------")
         print("t\t","charge net bl\t","charge net up\t", "y_t^up/N \t", "Ecart de Service")
         for t in range(self.T):
-            print(t,"\t",round(np.sum([x_bar_k["c_bl"][i][t]-x_bar_k["d_bl"][i][t] for i in range(self.N)])/self.N,0),\
+            """print(t,"\t",round(np.sum([x_bar_k["c_bl"][i][t]-x_bar_k["d_bl"][i][t] for i in range(self.N)])/self.N,0),\
                 "\t",round(np.sum([x_bar_k["c_up"][i][t]-x_bar_k["d_up"][i][t] for i in range(self.N)])/self.N,0),"\t",\
-                    round(self.data["announced_capacity"]["up"][actual_time+t]/self.N,0),"\t",round(np.sum([x_bar_k["c_bl"][i][t]-x_bar_k["d_bl"][i][t]-x_bar_k["c_up"][i][t]+x_bar_k["d_up"][i][t] for i in range(self.N)])/self.N - self.data["announced_capacity"]["up"][actual_time+t]/self.N,0))
+                    round(self.data["announced_capacity"]["up"][actual_time+t]/self.N,0),"\t",round(np.sum([x_bar_k["c_bl"][i][t]-x_bar_k["d_bl"][i][t]-x_bar_k["c_up"][i][t]+x_bar_k["d_up"][i][t] for i in range(self.N)])/self.N - self.data["announced_capacity"]["up"][actual_time+t]/self.N,0))"""
+            c_bl_sum = np.sum([np.array(x_bar_k["c_bl"][i][t]) - np.array(x_bar_k["d_bl"][i][t]) for i in range(self.N)])
+            c_up_sum = np.sum([np.array(x_bar_k["c_up"][i][t]) - np.array(x_bar_k["d_up"][i][t]) for i in range(self.N)])
+            
+            ecart_service = np.sum([
+                np.array(x_bar_k["c_bl"][i][t]) - np.array(x_bar_k["d_bl"][i][t]) -
+                np.array(x_bar_k["c_up"][i][t]) + np.array(x_bar_k["d_up"][i][t]) for i in range(self.N)])/self.N
+            
+            y_t_up = self.data["announced_capacity"]["up"][actual_time + t] / self.N
+            
+            print(t, "\t", round(c_bl_sum / self.N, 0), "\t", round(c_up_sum / self.N, 0),
+                "\t", round(y_t_up, 0), "\t", round(ecart_service - y_t_up))
+            
         x=x_bar_k
         c_bl=x["c_bl"]
         d_bl=x["d_bl"]
@@ -317,6 +402,25 @@ class Frank_Wolfe_Stochastic:
             print("Vehicle ",i,"\t","S_i_T:",s_T[i],"\t")
             print("S_i_min:", self.s_i_t_min[i])
             print("S_i_max:", self.s_i_max[i])
+
+    def save_data(self, df, n_iteration,optimize):
+        instance = self.instance.split("/")[-1]
+        instance_name = instance.replace(".json", "")
+        current_directory = os.getcwd()
+        parent_directory = os.path.dirname(current_directory)
+        if optimize ==False:
+            folder_path = os.path.join(parent_directory+"/result/pb_original/", instance_name)
+        else:
+            folder_path = os.path.join(parent_directory+"/result/pb_original&booster/", instance_name)
+        # Create the folder if it doesn't exist
+        if not os.path.exists(folder_path):
+            os.makedirs(folder_path)
+            print(f"Folder '{instance_name}' created successfully at '{folder_path}'")
+        if optimize ==False:
+            filename="../result/pb_original/" + "/"+instance_name+"/" + "SFW1_" + str(n_iteration) + "_" + time.strftime("%Y%m%d-%H%M%S") + ".json"
+        else:
+            filename="../result/pb_original&booster/" + "/"+instance_name+"/" + "SFW1_" + str(n_iteration) + "_" + time.strftime("%Y%m%d-%H%M%S") + ".json"
+        df.to_json(filename, orient="records")
 
 
 #FW_solve(data,actual_time)

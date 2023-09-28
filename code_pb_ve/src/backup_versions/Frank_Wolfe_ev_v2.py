@@ -109,6 +109,7 @@ class Frank_Wolfe_Stochastic:
         cost+=f_val
         return cost
 
+    
     def FW_solve(self, actual_time,  verbose=False, analyse=False, K=100, nk=50):
         """!!! gap primal-duale"""
 
@@ -194,26 +195,19 @@ class Frank_Wolfe_Stochastic:
                         if done_i[i]==0:
                             done_i[i]=1
                             c_bl_i, d_bl_i, c_up_i, d_up_i , _, _, _, _, s_bl_i, s_up_i, y = resolution_subpb(data, lambda_k,i,x_bar_k, verbose=verbose)
-                            c_bl[i]=(c_bl_i)
-                            c_up[i]=(c_up_i)
-                            d_bl[i]=(d_bl_i)
-                            d_up[i]=(d_up_i)
+                            c_bl[i]=c_bl_i
+                            c_up[i]=c_up_i
+                            d_bl[i]=d_bl_i
+                            d_up[i]=d_up_i
                             s_bl[i]=s_bl_i
                             s_up[i]=s_up_i
                             
-                            sample_c_bl[i]=(c_bl[i])
-                            sample_d_bl[i]=(d_bl[i])
-                            sample_c_up[i]=(c_up[i])
-                            sample_d_up[i]=(d_up[i])
-                            sample_s_bl[i]=(s_bl[i])
-                            sample_s_up[i]=(s_up[i])
-                        else:
-                            sample_c_bl[i]=(c_bl[i])
-                            sample_d_bl[i]=(d_bl[i])
-                            sample_c_up[i]=(c_up[i])
-                            sample_d_up[i]=(d_up[i])
-                            sample_s_bl[i]=(s_bl[i])
-                            sample_s_up[i]=(s_up[i])
+                        sample_c_bl[i]=(c_bl[i])
+                        sample_d_bl[i]=(d_bl[i])
+                        sample_c_up[i]=(c_up[i])
+                        sample_d_up[i]=(d_up[i])
+                        sample_s_bl[i]=(s_bl[i])
+                        sample_s_up[i]=(s_up[i])
                 sample = {"c_bl": sample_c_bl, "d_bl": sample_d_bl, \
                         "c_up": sample_c_up, "d_up": sample_d_up,\
                         "s_bl": sample_s_bl, "s_up": sample_s_up}

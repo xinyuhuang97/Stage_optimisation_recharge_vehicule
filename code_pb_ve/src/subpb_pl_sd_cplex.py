@@ -79,7 +79,7 @@ def resolution_subpb_st(data, lambda_k, i, x_bar_k,verbose=False,):
     # constraints 1 and 2 :initial state of charge equal to the initial state of charge of the EV
     problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["s_bl_0"], val=[1])], senses=["E"], rhs=[soc_init],names=["SOC_init bl"])
     problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["s_up_0"], val=[1])], senses=["E"], rhs=[soc_init],names=["SOC_init up"])
-
+    
     # constraints 3 and 4 : the state of charge should be between 0 and the maximum capacity of the battery
     problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["s_bl_"+str(t)], val=[1]) for t in range(1, T+1)],senses=["L"]*T,rhs=[soc_max]*T,names=["SOC_max bl"+str(t) for t in range(1, T+1)])
     problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["s_up_"+str(t)], val=[1]) for t in range(1, T+1)],senses=["L"]*T,rhs=[soc_max]*T,names=["SOC_max up"+str(t) for t in range(1, T+1)])

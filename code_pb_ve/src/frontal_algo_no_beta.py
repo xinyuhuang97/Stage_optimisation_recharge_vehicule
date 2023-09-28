@@ -2,6 +2,7 @@ import sys
 import time
 import numpy as np
 import pandas as pd
+import json
 sys.path.append('../data')
 from tqdm import tqdm
 from generator import *
@@ -16,15 +17,13 @@ if __name__ == "__main__":
     my_instance = "../data/instance_10.json"
 
 actual_time=0
-file_name="Frontal_problem.lp"
+
 
 
 class Frontal:
-    def __init__(self, my_instance, actual_time, verbose=False, nb_before=0, nb_ev=0):
-        if nb_ev!=0:
-            self.data = instance_fix_nb(my_instance, nb_ev, nb_before)
-        else:
-            self.data = json.load(open(my_instance))
+    def __init__(self, my_instance, actual_time, verbose=False):
+        self.data = json.load(open(my_instance))
+        self.instance=my_instance
         self.N = len(self.data["evses"])
         self.T = self.data["optim_horizon"]
         self.beta_min = self.data["penalties"]["beta_min"]
@@ -51,16 +50,18 @@ class Frontal:
 
         # Load data
         data = self.data
+        file_name="../log/"+(self.instance.split("/")[-1]).replace(".json","")+"/model"+".lp"
         
         # Create a new LP problem
         problem = cplex.Cplex()
 
+        """
         if not verbose:
             problem.set_log_stream(None)
             problem.set_error_stream(None)
             problem.set_warning_stream(None)
             problem.set_results_stream(None)
-
+        """
         # Prepare data
         """T=data["optim_horizon"]
         N=len(data["evses"])
@@ -90,16 +91,16 @@ class Frontal:
         d_bl = [["d_bl_" + str(i) +"_" +str(t) for t in range(1,self.T+1)]for i in range(self.N) ]
         u_bl = [["u_bl_" + str(i) +"_" +str(t) for t in range(1,self.T+1)]for i in range(self.N) ]
         v_bl = [["v_bl_" + str(i) +"_" +str(t) for t in range(1,self.T+1)]for i in range(self.N) ]
-        n_bl = [["n_bl_" + str(i) +"_" +str(t) for t in range(1,self.T+1)]for i in range(self.N) ]
-        p_bl = [["p_bl_" + str(i) +"_" +str(t) for t in range(1,self.T+1)]for i in range(self.N) ]
+        #n_bl = [["n_bl_" + str(i) +"_" +str(t) for t in range(1,self.T+1)]for i in range(self.N) ]
+        #p_bl = [["p_bl_" + str(i) +"_" +str(t) for t in range(1,self.T+1)]for i in range(self.N) ]
 
         s_up = [["s_up_" + str(i) +"_" +str(t) for t in range(self.T+1)]  for i in range(self.N) ]
         c_up = [["c_up_" + str(i) +"_" +str(t) for t in range(1,self.T+1)]for i in range(self.N) ]
         d_up = [["d_up_" + str(i) +"_" +str(t) for t in range(1,self.T+1)]for i in range(self.N) ]
         u_up = [["u_up_" + str(i) +"_" +str(t) for t in range(1,self.T+1)]for i in range(self.N) ]
         v_up = [["v_up_" + str(i) +"_" +str(t) for t in range(1,self.T+1)]for i in range(self.N) ]
-        n_up = [["n_up_" + str(i) +"_" +str(t) for t in range(1,self.T+1)]for i in range(self.N) ]
-        p_up = [["p_up_" + str(i) +"_" +str(t) for t in range(1,self.T+1)]for i in range(self.N) ]
+        #n_up = [["n_up_" + str(i) +"_" +str(t) for t in range(1,self.T+1)]for i in range(self.N) ]
+        #p_up = [["p_up_" + str(i) +"_" +str(t) for t in range(1,self.T+1)]for i in range(self.N) ]
 
         y = ["y_" + str(t) for t in range(1,self.T+1)]
         problem.variables.add(names=y,lb=[-cplex.infinity]*(self.T),ub=[cplex.infinity]*(self.T))
@@ -114,10 +115,10 @@ class Frontal:
             problem.variables.add(types=['B']*self.T,names=u_up[i])
             problem.variables.add(types=['B']*self.T,names=v_bl[i])
             problem.variables.add(types=['B']*self.T,names=v_up[i])
-            problem.variables.add(names=n_bl[i])
-            problem.variables.add(names=n_up[i])
-            problem.variables.add(names=p_bl[i])
-            problem.variables.add(names=p_up[i])
+            #problem.variables.add(names=n_bl[i])
+            #problem.variables.add(names=n_up[i])
+            #problem.variables.add(names=p_bl[i])
+            #problem.variables.add(names=p_up[i])
         
             problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["s_bl_"+str(i)+"_"+str(0)],val=[1])],senses=["E"],rhs=[self.soc_init[i]],names=["Initial SOC bl "+str(i)])
             problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["s_up_"+str(i)+"_"+str(0)],val=[1])],senses=["E"],rhs=[self.soc_init[i]],names=["Initial SOC up "+str(i)])
@@ -147,15 +148,15 @@ class Frontal:
             problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["s_up_"+str(i)+"_"+str(t+1),"s_bl_"+str(i)+"_"+str(t),"c_up_"+str(i)+"_"+str(t+1),"d_up_"+str(i)+"_"+str(t+1)],\
                                                                     val=[1,-1,-self.time_mesh_to_hour,self.time_mesh_to_hour]) for t in range(self.T)],senses=["E"]*(self.T),rhs=[0]*(self.T),names=["Production balance up"+str(i)+" "+str(t) for t in range(self.T)])
 
-            problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["n_bl_"+str(i)+"_"+str(t),"s_bl_"+str(i)+"_"+str(t)],val=[1,1]) for t in range(1,self.T+1)],senses=["G"]*self.T,rhs=self.s_i_t_min[i],names=["Negative part bl "+str(i)+" "+str(t) for t in range(1,self.T+1)])
-            problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["n_up_"+str(i)+"_"+str(t),"s_up_"+str(i)+"_"+str(t)],val=[1,1]) for t in range(1,self.T+1)],senses=["G"]*self.T,rhs=self.s_i_t_min[i],names=["Negative part up "+str(i)+" "+str(t) for t in range(1,self.T+1)])
+            problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["s_bl_"+str(i)+"_"+str(t)],val=[1]) for t in range(1,self.T+1)], senses=["G"]*(self.T), rhs=[self.s_i_t_min[i][t] for t in range(self.T)])
+            problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["s_up_"+str(i)+"_"+str(t)],val=[1]) for t in range(1,self.T+1)], senses=["G"]*(self.T), rhs=[self.s_i_t_min[i][t] for t in range(self.T)])
 
-            problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["p_bl_"+str(i)+"_"+str(t),"s_bl_"+str(i)+"_"+str(t)],val=[1,-1]) for t in range(1,self.T+1)],senses=["G"]*self.T,rhs=[-self.soc_max[i]]*self.T,names=["Positive part bl "+str(i)+" "+str(t) for t in range(1,self.T+1)])
-            problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["p_up_"+str(i)+"_"+str(t),"s_up_"+str(i)+"_"+str(t)],val=[1,-1]) for t in range(1,self.T+1)],senses=["G"]*self.T,rhs=[-self.soc_max[i]]*self.T,names=["Positive part up "+str(i)+" "+str(t) for t in range(1,self.T+1)])
         
         problem.linear_constraints.add(lin_expr=[cplex.SparsePair(ind=["y_"+str(t)]+[x for i in range(self.N) for x in ["c_bl_"+str(i)+"_"+str(t),"c_up_"+str(i)+"_"+str(t),"d_bl_"+str(i)+"_"+str(t),"d_up_"+str(i)+"_"+str(t)]],\
                                                                 val=[1]+[x for _ in range(self.N) for x in [-1/self.N,1/self.N,1/self.N,-1/self.N]]) for t in range(1,self.T+1)],senses=["E"]*self.T,\
                                                                 rhs=[-x/self.N for x in data["announced_capacity"]["up"][actual_time:actual_time+self.T]],names=["y_t facilitate calculations"+str(t) for t in range(1,self.T+1)])
+
+        
 
         # Set the objective function
         problem.objective.set_sense(problem.objective.sense.minimize)
@@ -195,10 +196,7 @@ class Frontal:
         sample_d_up=np.zeros((self.N,self.T))
         sample_s_bl=np.zeros((self.N,self.T))
         sample_s_up=np.zeros((self.N,self.T))
-        sample_n_bl=np.zeros((self.N,self.T))
-        sample_n_up=np.zeros((self.N,self.T))
-        sample_p_bl=np.zeros((self.N,self.T))
-        sample_p_up=np.zeros((self.N,self.T))
+
         for i in range(self.N):
             sample_c_bl[i]=(problem.solution.get_values(c_bl[i]))
             sample_d_bl[i]=(problem.solution.get_values(d_bl[i]))
@@ -206,35 +204,18 @@ class Frontal:
             sample_d_up[i]=(problem.solution.get_values(d_up[i]))
             sample_s_bl[i]=(problem.solution.get_values(s_bl[i][1:]))
             sample_s_up[i]=(problem.solution.get_values(s_up[i][1:]))
-            for t in range(1,self.T+1):
-                sample_n_bl[i][t-1]=(problem.solution.get_values("n_bl_"+str(i)+"_"+str(t)))
-                sample_n_up[i][t-1]=(problem.solution.get_values("n_up_"+str(i)+"_"+str(t)))
-                sample_p_bl[i][t-1]=(problem.solution.get_values("p_bl_"+str(i)+"_"+str(t)))
-                sample_p_up[i][t-1]=(problem.solution.get_values("p_up_"+str(i)+"_"+str(t)))
 
-        """
-        print("n_bl",sample_n_bl)
-        print("n_up",sample_n_up)
-        print("p_bl",sample_p_bl)
-        print("p_up",sample_p_up)
-        print("c_bl",sample_c_bl)
-        print("d_bl",sample_d_bl)
-        print("c_up",sample_c_up)
-        print("d_up",sample_d_up)
-        print("s_bl",sample_s_bl)
-        print("s_up",sample_s_up)
-        print("s_t_min",self.s_i_t_min)
-        print("s_t_max",self.soc_max)
-        print("y",problem.solution.get_values(y))
-        print([x**2 for x in (problem.solution.get_values(y))])
-        """
         #print_objective_function(file_name)
         result ={"c_bl": sample_c_bl, "d_bl": sample_d_bl, \
                 "c_up": sample_c_up, "d_up": sample_d_up,\
                 "s_bl": sample_s_bl, "s_up": sample_s_up}
+        save ={"c_bl": sample_c_bl.tolist(), "d_bl": sample_d_bl.tolist(), \
+                "c_up": sample_c_up.tolist(), "d_up": sample_d_up.tolist(),\
+                "s_bl": sample_s_bl.tolist(), "s_up": sample_s_up.tolist()}
         #print("Valeur optimal retourne par la fonction",objective_function(data,result,s_t_min,soc_max))
+        #self.save_cplex_data(save)
         print("valeur optimal par function objective:", self.objective_function(result))
-        return result,self.s_i_t_min,self.soc_max
+        return result,self.s_i_t_min,self.soc_max,self.objective_function(result)
 
 
     def objective_function(self, x):
@@ -281,10 +262,20 @@ class Frontal:
         print("------------------------------------------------------")
         print("t\t","charge net bl\t","charge net up\t", "y_t^up/N \t", "Ecart de Service")
         for t in range(self.T):
-            print(t,"\t",round(np.sum([x_bar_k["c_bl"][i][t]-x_bar_k["d_bl"][i][t] for i in range(self.N)])/self.N,0),\
+            """print(t,"\t",round(np.sum([x_bar_k["c_bl"][i][t]-x_bar_k["d_bl"][i][t] for i in range(self.N)])/self.N,0),\
                 "\t",round(np.sum([x_bar_k["c_up"][i][t]-x_bar_k["d_up"][i][t] for i in range(self.N)])/self.N,0),"\t",\
-                    round(self.data["announced_capacity"]["up"][actual_time+t]/self.N,0),"\t",round(np.sum([x_bar_k["c_bl"][i][t]-x_bar_k["d_bl"][i][t]-x_bar_k["c_up"][i][t]+x_bar_k["d_up"][i][t] for i in range(self.N)])/self.N - self.data["announced_capacity"]["up"][actual_time+t]/self.N,0))
-        #for t in range(T):
+                    round(self.data["announced_capacity"]["up"][actual_time+t]/self.N,0),"\t",round(np.sum([x_bar_k["c_bl"][i][t]-x_bar_k["d_bl"][i][t]-x_bar_k["c_up"][i][t]+x_bar_k["d_up"][i][t] for i in range(self.N)])/self.N - self.data["announced_capacity"]["up"][actual_time+t]/self.N,0))"""
+            c_bl_sum = np.sum([np.array(x_bar_k["c_bl"][i][t]) - np.array(x_bar_k["d_bl"][i][t]) for i in range(self.N)])
+            c_up_sum = np.sum([np.array(x_bar_k["c_up"][i][t]) - np.array(x_bar_k["d_up"][i][t]) for i in range(self.N)])
+            
+            ecart_service = np.sum([
+                np.array(x_bar_k["c_bl"][i][t]) - np.array(x_bar_k["d_bl"][i][t]) -
+                np.array(x_bar_k["c_up"][i][t]) + np.array(x_bar_k["d_up"][i][t]) for i in range(self.N)])/self.N
+            
+            y_t_up = self.data["announced_capacity"]["up"][actual_time + t] / self.N
+            
+            print(t, "\t", round(c_bl_sum / self.N, 0), "\t", round(c_up_sum / self.N, 0),
+                "\t", round(y_t_up, 0), "\t", round(ecart_service - y_t_up))
         x=x_bar_k
         cost=0
         c_bl=x["c_bl"]
@@ -297,7 +288,7 @@ class Frontal:
         sum_neg_pos_part=0
         sum_cost_electricity=0
         sum_soc=0
-        s_T=s_bl[:,self.T-1]
+        s_T=[s_bl[i][self.T-1] for i in range(self.N)]
         soc_max=[self.data["evses"][i]["SOC_max"] * self.data["evses"][i]["capacity"] for i in range(self.N)]
         for i in range(self.N):
             for t in range(actual_time,actual_time + self.T):
@@ -311,8 +302,9 @@ class Frontal:
             # We want the level of c_bl to be the high at the end of the optimization horizon
             #print("s_T[i]",s_T[i])
             #print("s_i_max[i]",soc_max[i])
-            print(soc_max[i],s_T[i])
+            #print(soc_max[i],s_T[i])
             sum_soc+=(soc_max[i] - s_T[i]) * self.data["cost_of_electricity"][actual_time + self.T] * self.penality_SOC_fin / self.N 
+        print(s_T)
         print("------------------------------------------------------")
         print("f_val:",f_val, "neg_pos_part:",sum_neg_pos_part, "cost_electricity:",sum_cost_electricity, "soc:",sum_soc)
         print("value of the objective function:",f_val+sum_neg_pos_part+sum_cost_electricity+sum_soc)
@@ -323,6 +315,7 @@ class Frontal:
             print("Vehicle ",i,"\t","S_i_T:",s_T[i],"\t")
             print("S_i_min:", self.s_i_t_min[i])
             print("S_i_max:", self.s_i_max[i])
+
 
 #x,s_i_t_min,s_i_max =Frontal(data, actual_time, verbose=False)
 #print("valeur optimal retourne par la fonction",objective_function(data,x,s_i_t_min,s_i_max))

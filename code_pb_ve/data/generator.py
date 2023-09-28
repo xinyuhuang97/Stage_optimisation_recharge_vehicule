@@ -7,10 +7,12 @@ import sys
 
 default_data = {
     "optim_horizon" : 10,
+    #"optim_horizon" : 24,
     "fcr_commit" : 15,
     "time_mesh" : 15,
     "announced_capacity" : {
         "up" : [20000 for _ in range (96)],
+        #"up" : [18500 for _ in range (96)],
         "down" : [0.0 for _ in range (96)]
     },
     "evses" : [],
@@ -71,6 +73,19 @@ def instance_json(nb_ev):
     with open(f"../data/instance_{nb_ev}.json", 'w') as f:
         json.dump(data, f)
 
+def instance_json_by_name(nb_ev, name):
+    data = copy.deepcopy(default_data)
+    data["announced_capacity"]["up"] = [_ * nb_ev for _ in data["announced_capacity"]["up"]]
+    data["announced_capacity"]["down"] = [_ * nb_ev for _ in data["announced_capacity"]["down"]]
+    for ev_id in range(nb_ev):
+        ev = copy.deepcopy(default_evse)
+        ev["id"] = f"EV_{ev_id}"
+        ev["charging_horizon"] = data["optim_horizon"]
+        ev["SOC_init"] += (- 0.05 + random.random()/10)
+        ev["SOC_final"] += (- 0.05 + random.random()/10)
+        data["evses"].append(ev)
+    with open(f"../data/_{nb_ev}"+name+".json", 'w') as f:
+        json.dump(data, f)
 
 def instance_dict(nb_ev):
     data = copy.deepcopy(default_data)
